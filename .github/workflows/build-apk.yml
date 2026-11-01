@@ -1,0 +1,52 @@
+name: Build Mafia Legend APK
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Find and extract Android project ZIP
+        shell: bash
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -iname '*.zip' | head -n 1)
+          if [ -z "$ZIP_FILE" ]; then
+            echo 'No .zip archive found in the repository root.'
+            exit 1
+          fi
+          mkdir -p extracted
+          unzip -q "$ZIP_FILE" -d extracted
+          PROJECT_DIR=$(find extracted -type f -name settings.gradle -printf '%h\n' | head -n 1)
+          if [ -z "$PROJECT_DIR" ]; then
+            echo 'Could not find Android settings.gradle inside the ZIP.'
+            exit 1
+          fi
+          echo "ANDROID_PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
+          if [ ! -f "$PROJECT_DIR/app/build.gradle" ]; then
+            echo 'Android app module is missing inside the ZIP.'
+            exit 1
+          fi
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install Android SDK packages
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0' 'platform-tools'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+      - name: Build debug APK
+        run: gradle -p "$ANDROID_PROJECT_DIR" assembleDebug
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: mafia-legend-debug-apk
+          path: extracted/**/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
